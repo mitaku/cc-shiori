@@ -1,0 +1,336 @@
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Register } from 'claude-code'
+
+import type { Gist, Live, Ref, Saved, Turn } from '../types'
+import {
+  LIMITS,
+  buildPrompt,
+  clean,
+  clip,
+  describeTool,
+  emptyLive,
+  emptyUsage,
+  fallbackGist,
+  localeFor,
+  mergeRefs,
+  parseReply,
+  systemPrompt,
+  turnKeyOf,
+  turnText,
+  turnsFrom,
+} from './core'
+import type { Locale } from './core'
+
+// shiori: where a session stands, and an index of the IDs it mentions.
+// After each main-loop turn a small model updates the record from the previous record and
+// the new turn; the band above the prompt shows purpose and status, the pane shows it all.
+
+const PANE = 'shiori'
+const STORE_PREFIX = 'shiori:'
+const STORE_MAX = 200
+const ACCENT = 'cyan'
+
+const live = atom({ plugin: 'shiori', key: 'live' } as const, emptyLive())
+
+// Module variables start over on a hot reload; the record itself lives in $.state and $.store.
+let locale: Locale = localeFor(undefined)
+let isInteractive = true
+let ask: string | null = null
+let activity: string[] = []
+let isBusy = false
+let isQueued = false
+
+async function refreshLocale($: EngineInterface) {
+  const settings = (await $.settings.read()) as Record<string, unknown>
+  locale = localeFor(settings.language)
+}
+
+async function save($: EngineInterface, l: Live) {
+  if (l.sessionId === null || l.gist === null) return
+  const saved: Saved = {
+    gist: l.gist,
+    turnKey: turnKeyOf(l.turns.find(t => t.n === l.gistTurn)),
+    savedAt: await $.clock.now(),
+    cwd: await $.session.cwd(),
+    usage: l.usage,
+  }
+  await $.store.set(`${STORE_PREFIX}${l.sessionId}`, saved)
+}
+
+async function prune($: EngineInterface) {
+  const keys = (await $.store.keys()).filter(k => k.startsWith(STORE_PREFIX))
+  if (keys.length <= STORE_MAX) return
+  const dated: [string, number][] = []
+  for (const k of keys) dated.push([k, ((await $.store.get(k)) as Saved | undefined)?.savedAt ?? 0])
+  dated.sort((a, b) => b[1] - a[1])
+  for (const [k] of dated.slice(STORE_MAX)) await $.store.delete(k)
+}
+
+/** Updates the gist from the turns written since it; one run at a time, a request meanwhile runs after. */
+async function summarize($: EngineInterface) {
+  if (isBusy) {
+    isQueued = true
+    return
+  }
+  isBusy = true
+  try {
+    do {
+      isQueued = false
+      const cur = await read($, live)
+      const prompt = buildPrompt(cur)
+      const last = cur.turns.at(-1)
+      if (prompt === undefined || last === undefined) break
+      await refreshLocale($)
+      const r = await $.model.complete({
+        model: 'haiku',
+        system: systemPrompt(locale.language),
+        prompt,
+        maxTokens: 2000,
+        effort: 'low',
+        timeoutMs: 30000,
+      })
+      const after = await read($, live)
+      if (after.epoch !== cur.epoch || last.n < after.gistTurn) break
+      const u = (r.usage ?? {}) as { input_tokens?: number; output_tokens?: number }
+      const usage = {
+        calls: after.usage.calls + 1,
+        input: after.usage.input + (u.input_tokens ?? 0),
+        output: after.usage.output + (u.output_tokens ?? 0),
+      }
+      const parsed = r.isAnswered ? parseReply(r.text) : undefined
+      if (!r.isAnswered) $.ui.log(`shiori: no summary (${r.reason})`, { to: 'debug' })
+      const fresh = cur.turns.filter(t => t.n > cur.gistTurn)
+      const gist: Gist | undefined = parsed
+        ? { ...parsed, refs: mergeRefs(cur.gist?.refs ?? [], parsed.refs, last.n, turnText(fresh)) }
+        : fallbackGist(cur.gist, last)
+      if (gist === undefined) {
+        await update($, live, l => ({ ...l, usage }))
+        break
+      }
+      await update($, live, l => ({ ...l, gist, gistTurn: last.n, usage }))
+      await save($, await read($, live))
+    } while (isQueued)
+  } catch (err) {
+    $.ui.log(`shiori: ${String(err)}`, { to: 'debug' })
+  } finally {
+    isBusy = false
+  }
+}
+
+/** Reads the session's conversation: a saved gist of its last turn is shown as is, else rewritten. */
+async function openSession($: EngineInterface, epoch: number) {
+  const id = await $.session.id()
+  const messages = await $.session.messages()
+  if (!Array.isArray(messages)) return
+  const turns: Turn[] = turnsFrom(messages)
+  const saved = (await $.store.get(`${STORE_PREFIX}${id}`)) as Saved | undefined
+  const last = turns.at(-1)
+  const isCurrent = saved !== undefined && last !== undefined && saved.turnKey === turnKeyOf(last)
+  let stale = false
+  await update($, live, l => {
+    if (l.epoch !== epoch) return l
+    // A turn recorded while the transcript was being read is newer than the transcript.
+    const merged = l.turns.length > turns.length ? l.turns : turns
+    stale = !isCurrent && merged.length > 0
+    return {
+      ...l,
+      sessionId: id,
+      turns: merged,
+      gist: saved?.gist ?? l.gist,
+      gistTurn: isCurrent ? (last?.n ?? 0) : Math.max(0, merged.length - LIMITS.turnsPerRequest),
+      usage: saved?.usage ?? l.usage,
+    }
+  })
+  if (stale) await summarize($)
+}
+
+/** After /clear or /resume the process goes on under another session id: wait for it, then read it. */
+async function reopen($: EngineInterface, epoch: number, oldId: string | null, tries: number) {
+  const id = await $.session.id()
+  if (id === oldId && tries < 20) {
+    $.clock.after(500, () => void reopen($, epoch, oldId, tries + 1))
+    return
+  }
+  await openSession($, epoch)
+}
+
+async function openPane($: EngineInterface) {
+  await $.ui.open({ id: PANE, title: locale.words.title })
+}
+
+async function closePane($: EngineInterface) {
+  await $.ui.close({ id: PANE })
+}
+
+const KIND_TAG: Record<Ref['kind'], string> = {
+  pr: 'PR',
+  issue: 'Issue',
+  ticket: 'Ticket',
+  task: 'Task',
+  commit: 'Commit',
+  other: '',
+}
+
+export const register: Register = on => {
+  on('session.start', async ($, e, next) => {
+    isInteractive = e.isInteractive
+    if (!isInteractive) return next(e)
+    await refreshLocale($)
+    await $.command.register({
+      name: 'shiori',
+      description: 'Where this session stands: purpose, status, what waits on you, next, and an index of the IDs it mentions. `refresh` rewrites it.',
+    })
+    const { epoch } = await read($, live)
+    $.clock.after(0, () => void openSession($, epoch))
+    $.clock.after(5000, () => void prune($))
+    return next(e)
+  })
+
+  on('session.end', async ($, e, next) => {
+    if (isInteractive && (e.reason === 'clear' || e.reason === 'resume')) {
+      const cur = await read($, live)
+      const epoch = cur.epoch + 1
+      await update($, live, () => emptyLive(epoch))
+      ask = null
+      activity = []
+      $.clock.after(500, () => void reopen($, epoch, cur.sessionId, 0))
+    }
+    return next(e)
+  })
+
+  on('prompt.submit', async ($, e, next) => {
+    if (isInteractive && e.turnId === undefined && (e.origin.kind === 'composer' || e.origin.kind === 'bridge')) {
+      const text = clean(e.text)
+      ask = text ? clip(text, LIMITS.ask) : null
+      activity = []
+    }
+    return next(e)
+  })
+
+  on('tool.call', async ($, e, next) => {
+    if (isInteractive && e.agentId === undefined) {
+      const line = describeTool(e.tool, e as unknown as Record<string, unknown>)
+      if (line) activity = [...activity, line].slice(-LIMITS.activity)
+    }
+    return next(e)
+  })
+
+  on('turn.complete', async ($, e, next) => {
+    const done = await next(e)
+    if (!isInteractive || e.agentId !== undefined) return done
+    const answer = clip(clean(done.text ?? ''), LIMITS.answer)
+    const recorded = { ask, activity }
+    ask = null
+    activity = []
+    await update($, live, l => {
+      const turn: Turn = { n: (l.turns.at(-1)?.n ?? 0) + 1, ask: recorded.ask, answer, activity: recorded.activity }
+      return { ...l, turns: [...l.turns, turn].slice(-LIMITS.turns) }
+    })
+    $.clock.after(0, () => void summarize($))
+    return done
+  })
+
+  on('command.run', { command: 'shiori' }, async ($, e) => {
+    if (e.args.trim() === 'refresh') {
+      await update($, live, l => ({ ...l, gistTurn: Math.max(0, (l.turns.at(-1)?.n ?? 0) - LIMITS.turnsPerRequest) }))
+      await summarize($)
+      return { text: locale.words.refreshed }
+    }
+    await openPane($)
+    return { text: '' }
+  })
+
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    const cur = await read($, live)
+    if (!isInteractive || e.props.hasSurvey || (cur.gist === null && cur.turns.length === 0)) return next(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const w = locale.words
+    const g = cur.gist
+    const waiting = g?.pending.length ?? 0
+
+    return (
+      <Box flexDirection="column">
+        <Box>
+          <Text color={ACCENT}>{w.purpose} </Text>
+          <Text wrap="truncate-end">{g?.purpose ?? w.notYet}</Text>
+        </Box>
+        <Box>
+          <Text color={ACCENT}>{w.status} </Text>
+          <Text wrap="truncate-end">
+            {g?.status ?? w.notYet}
+            {e.props.isWorking ? ` ${w.working}` : ''}
+          </Text>
+          {waiting > 0 ? <Text color="yellow">{`  · ${w.waiting(waiting)}`}</Text> : null}
+          <Text> </Text>
+          <Button key="details" label={w.details} onPress={() => void openPane($)} />
+        </Box>
+      </Box>
+    )
+  })
+
+  on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const cur = await read($, live)
+    const w = locale.words
+    const g = cur.gist
+    const rows = (items: readonly string[]) => (items.length ? items : [w.none])
+    const sections: [string, readonly string[]][] = g
+      ? [
+          [w.purpose, [g.purpose]],
+          [w.status, [g.status]],
+          [w.pending, rows(g.pending)],
+          [w.next, rows(g.next ? [g.next] : [])],
+        ]
+      : [[w.purpose, [w.notYet]]]
+    const tail: [string, readonly string[]][] = g
+      ? [
+          [w.done, rows(g.done)],
+          [w.decisions, rows(g.decisions)],
+        ]
+      : []
+
+    return (
+      <Box flexDirection="column" gap={1}>
+        {sections.map(([title, items]) => (
+          <Box key={`s-${title}`} flexDirection="column">
+            <Text color={ACCENT} bold>
+              {title}
+            </Text>
+            {items.map((item, i) => (
+              <Text key={`${title}-${i}`}>{items.length > 1 ? `• ${item}` : item}</Text>
+            ))}
+          </Box>
+        ))}
+        {g ? (
+          <Box key="s-refs" flexDirection="column">
+            <Text color={ACCENT} bold>
+              {w.refs}
+            </Text>
+            {g.refs.length === 0 ? <Text dimColor>{w.none}</Text> : null}
+            {g.refs.map(r => (
+              <Box key={`ref-${r.id}`}>
+                <Text bold>{r.id}</Text>
+                {KIND_TAG[r.kind] ? <Text dimColor>{` ${KIND_TAG[r.kind]}`}</Text> : null}
+                <Text>{`  ${r.what}`}</Text>
+              </Box>
+            ))}
+          </Box>
+        ) : null}
+        {tail.map(([title, items]) => (
+          <Box key={`t-${title}`} flexDirection="column">
+            <Text color={ACCENT} bold>
+              {title}
+            </Text>
+            {items.map((item, i) => (
+              <Text key={`${title}-${i}`}>{items.length > 1 ? `• ${item}` : item}</Text>
+            ))}
+          </Box>
+        ))}
+        <Box key="footer">
+          <Text dimColor>{`haiku ×${cur.usage.calls}  `}</Text>
+          <Button key="close" label={w.close} onPress={() => void closePane($)} />
+        </Box>
+      </Box>
+    )
+  })
+}

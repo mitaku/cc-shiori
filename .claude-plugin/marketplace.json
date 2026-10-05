@@ -1,0 +1,16 @@
+{
+  "name": "cc-shiori",
+  "owner": {
+    "name": "mitaku"
+  },
+  "metadata": {
+    "description": "A Claude Code mod: a bookmark (shiori) for each session — where it stands, and an index of the IDs it mentions"
+  },
+  "plugins": [
+    {
+      "name": "shiori",
+      "source": "./",
+      "description": "Keeps where a session stands (purpose, status, what waits on you, next, done, decisions) and an index of the tickets, PRs, issues and tasks it mentions, above the prompt and in a pane"
+    }
+  ]
+}
