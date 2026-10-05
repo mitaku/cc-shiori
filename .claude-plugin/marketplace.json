@@ -4,13 +4,13 @@
     "name": "mitaku"
   },
   "metadata": {
-    "description": "A Claude Code mod: a bookmark (shiori) for each session — where it stands, and an index of the IDs it mentions"
+    "description": "A Claude Code mod: a bookmark (shiori) for each session — where it stands, whether it is your turn, and what the IDs it mentioned are"
   },
   "plugins": [
     {
       "name": "shiori",
       "source": "./",
-      "description": "Keeps where a session stands (purpose, status, what waits on you, next, done, decisions) and an index of the tickets, PRs, issues and tasks it mentions, above the prompt and in a pane"
+      "description": "A bookmark for each session, from that session alone: where it stands, whether it is your turn, and what the tickets, PRs and tasks it mentioned point at"
     }
   ]
 }

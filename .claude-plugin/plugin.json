@@ -1,7 +1,7 @@
 {
   "name": "shiori",
-  "version": "0.6.0",
-  "description": "Keeps where a session stands (purpose, status, what waits on you, next, done, decisions) and an index of the tickets, PRs, issues and tasks it mentions, above the prompt and in a pane",
+  "version": "0.6.1",
+  "description": "A bookmark for each session, from that session alone: where it stands, whether it is your turn, and what the tickets, PRs and tasks it mentioned point at",
   "author": { "name": "mitaku" },
   "license": "MIT",
   "types": "./types/index.d.ts",
@@ -9,7 +9,7 @@
     "linkRules": {
       "type": "string",
       "title": "Index links",
-      "description": "Where ids outside GitHub link to: `regex => https://host/path/{id}` entries separated by `;` (`{id}` the whole id, `{1}` `{2}` the pattern's groups). Example: `[A-Z][A-Z0-9_]+-\\d+ => https://example.backlog.jp/view/{id}`. GitHub pull requests, issues and commits link without a rule.",
+      "description": "Where ids outside GitHub link to: `regex => https://host/path/{id}` entries separated by `;` (`{id}` the whole id, `{1}` `{2}` the pattern's groups). Example: `[A-Z][A-Z0-9_]+-\\d+ => https://example.backlog.jp/view/{id}`. GitHub pull requests, issues and commits written with their repository (owner/repo#12, owner/repo@sha) link without a rule.",
       "default": "",
       "required": false
     }

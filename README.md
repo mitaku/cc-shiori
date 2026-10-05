@@ -2,12 +2,15 @@
 
 [日本語](README.ja.md)
 
-A Claude Code mod that keeps a *shiori* (a bookmark) in each session:
+A *shiori* (a bookmark) for Claude Code sessions you run in parallel: when you come back to one, it tells you three things, from **that session alone**:
 
-- **where it stands** — purpose, status, what waits on you, next, done, decisions
-- **an index** of the numbered references it mentions — tickets (`ABC-123`), pull requests (`owner/repo#12`), issues, tasks (`T-012`) — and what each points at
+1. **Where it stands** — purpose, status, next (and what is done and decided)
+2. **Whether it is your turn** — what Claude waits on you to answer, decide or do (`?2 ◇1 !1`)
+3. **What that number was** — what each ticket (`ABC-123`), pull request (`owner/repo#12`) or task (`T-012`) it mentioned points at (the index)
 
-When you run several sessions in parallel and switch between them, you lose track of what each one is for, and of what `t-0005` or `ABC-123` meant. The session remembers; you don't. Shiori shows it above the prompt and in a pane.
+When you switch between sessions you lose track of what each one is for, whether it is waiting on you, and what `t-0005` meant. The session remembers; you don't. Shiori shows it in a band above the prompt and in a pane.
+
+A shiori sits in one book (one session) and looks at nothing else: not other sessions, not the working directory. Choosing which session to go to is the terminal's job (herdr's sidebar and the like); the shiori tells you where you left off once you are there.
 
 ## What it shows
 
