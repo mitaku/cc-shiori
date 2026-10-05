@@ -62,6 +62,7 @@ export type Words = {
   notYet: string
   none: string
   refreshed: string
+  rebuilt: string
   opened: string
   lastSeen: (turn: number) => string
   jump: string
@@ -91,6 +92,7 @@ const EN: Words = {
   notYet: '(after the first turn)',
   none: '—',
   refreshed: 'Summary refreshed.',
+  rebuilt: 'Rebuilt the summary from scratch (the previous one and its index dropped).',
   opened: 'Opened the shiori pane.',
   lastSeen: turn => `last mentioned in turn ${turn}`,
   jump: 'go to mention',
@@ -120,6 +122,7 @@ const JA: Words = {
   notYet: '(最初のターンの後に表示)',
   none: '—',
   refreshed: '要約を作り直しました。',
+  rebuilt: '前回の栞と索引を捨てて、一から作り直しました。',
   opened: '栞を開きました。',
   lastSeen: turn => `最後に出たのは ${turn} ターン目`,
   jump: '発言へ移動',

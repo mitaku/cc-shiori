@@ -35,7 +35,7 @@ Haiku tells what waits and of which kind. When the final answer ends in a questi
 ## Use
 
 - Work as usual; the shiori updates after each main-conversation turn, without holding the turn up.
-- `/shiori` opens the pane; `/shiori refresh` rewrites it from the latest turns.
+- `/shiori` opens the pane; `/shiori refresh` rewrites it from the latest turns, on top of the previous one; `/shiori refresh --hard` drops the previous one and its index and starts over from the latest turns and the earlier requests (when the index holds on to what the session has moved on from).
 - Labels and text follow Claude Code's `language` setting.
 
 ### Index links and details

@@ -175,7 +175,7 @@ async function summarize($: EngineInterface) {
         timeoutMs: 30000,
       })
       const after = await read($, live)
-      if (after.epoch !== cur.epoch || last.n < after.gistTurn) break
+      if (after.epoch !== cur.epoch || last.n < after.gistTurn) continue
       const u = (r.usage ?? {}) as { input_tokens?: number; output_tokens?: number }
       const usage = {
         calls: after.usage.calls + 1,
@@ -276,7 +276,7 @@ export const register: Register = (on, options) => {
     await refreshRepo($)
     await $.command.register({
       name: 'shiori',
-      description: 'Where this session stands: purpose, status, what waits on you, next, and an index of the IDs it mentions. `refresh` rewrites it.',
+      description: 'Where this session stands: purpose, status, what waits on you, next, and an index of the IDs it mentions. `refresh` rewrites it from the latest turns; `refresh --hard` drops it and its index and starts over.',
     })
     // A reload finds the pane as the engine kept it.
     const isUp = (await $.ui.panes()).some(p => p.id === PANE && p.isPlaced)
@@ -346,6 +346,18 @@ export const register: Register = (on, options) => {
 
   on('command.run', { command: 'shiori' }, async ($, e) => {
     await refreshLocale($)
+    if (/^refresh\s+--hard$/.test(e.args.trim())) {
+      // Drop the record and its index: what the latest turns and the earlier requests say is all
+      // that comes back. The epoch moves so a summary already under way is not written over it.
+      await update($, live, l => ({
+        ...l,
+        gist: null,
+        gistTurn: Math.max(0, (l.turns.at(-1)?.n ?? 0) - LIMITS.turnsPerRequest),
+        epoch: l.epoch + 1,
+      }))
+      await summarize($)
+      return { text: locale.words.rebuilt }
+    }
     if (e.args.trim() === 'refresh') {
       await update($, live, l => ({ ...l, gistTurn: Math.max(0, (l.turns.at(-1)?.n ?? 0) - LIMITS.turnsPerRequest) }))
       await summarize($)
