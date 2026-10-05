@@ -17,6 +17,7 @@ import {
   mergeRefs,
   parseLinkRules,
   parseReply,
+  quotesFor,
   refUrl,
   systemPrompt,
   turnKeyOf,
@@ -51,9 +52,11 @@ async function refreshRepo($: EngineInterface) {
   repo = githubRepoOf((await $.session.repo())?.remote)
 }
 
-// The transcript rows drawn so far, in the order first drawn, each with its text (lowercased,
-// capped): what "go to the mention" searches, newest first. A render hook cannot write $.state,
-// so this is the module's; after a reload it fills again as rows are drawn.
+// The transcript rows drawn so far, in the order first drawn, each with its requestId (the
+// message id) and text (lowercased, capped): what "go to the mention" (↥, terminal only) searches,
+// newest first. The module's (a render hook cannot write $.state): after a reload it fills
+// again as rows are drawn. The desktop app draws rows too but refuses a plugin's transcript
+// scroll ("transcript not scrollable here", 2026-10-05), so there the quote stands in for it.
 const ROW_TEXT_MAX = 4000
 const ROWS_MAX = 3000
 let rows: { requestId: string; text: string }[] = []
@@ -89,7 +92,7 @@ async function jumpTo($: EngineInterface, id: string) {
     return
   }
   const r = (await $.ui.scroll({ to: { requestId: row }, block: 'center' })) as { deny?: string }
-  if (r.deny) $.ui.toast(`${locale.words.notFound} (${r.deny})`)
+  if (r.deny) $.ui.toast(`${locale.words.cannotScroll}: ${r.deny}`)
 }
 
 /**
@@ -162,9 +165,14 @@ async function summarize($: EngineInterface) {
       const parsed = r.isAnswered ? parseReply(r.text) : undefined
       if (!r.isAnswered) $.ui.log(`shiori: no summary (${r.reason})`, { to: 'debug' })
       const fresh = cur.turns.filter(t => t.n > cur.gistTurn)
-      const gist: Gist | undefined = parsed
+      const merged: Gist | undefined = parsed
         ? { ...parsed, refs: mergeRefs(cur.gist?.refs ?? [], parsed.refs, last.n, turnText(fresh)) }
         : fallbackGist(cur.gist, last)
+      // Each id's latest mention, quoted from the whole conversation (no drawing needed, so past
+      // messages count and it works where the transcript cannot be scrolled to, as on the desktop).
+      const messages = merged ? await $.session.messages() : []
+      const gist: Gist | undefined =
+        merged && Array.isArray(messages) ? { ...merged, refs: quotesFor(merged.refs, messages) } : merged
       if (gist === undefined) {
         await update($, live, l => ({ ...l, usage }))
         break
@@ -356,6 +364,8 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button, Link } = $.ui.resolve(e)
+    // A plugin may scroll the transcript on the terminal; the desktop app refuses it.
+    const canScroll = e.surface === 'terminal'
     const cur = await read($, live)
     const w = locale.words
     const g = cur.gist
@@ -403,6 +413,8 @@ export const register: Register = (on, options) => {
                   <Box>
                     {url ? <Link href={url} label={r.id} /> : <Text bold>{r.id}</Text>}
                     {tag ? <Text dimColor>{` ${tag}`}</Text> : null}
+                    {canScroll ? <Text> </Text> : null}
+                    {canScroll ? <Button key={`go-${r.id}`} label="↥" onPress={() => void jumpTo($, r.id)} /> : null}
                     <Text wrap="truncate-end">{`  ${r.what}`}</Text>
                   </Box>
                   <Box
@@ -418,9 +430,9 @@ export const register: Register = (on, options) => {
                     <Text dimColor wrap="truncate-end">
                       {[tag, url, w.lastSeen(r.turn)].filter(Boolean).join('  ·  ')}
                     </Text>
-                    <Box>
-                      <Button key={`jump-${r.id}`} label={w.jump} onPress={() => void jumpTo($, r.id)} />
-                    </Box>
+                    {r.quote ? (
+                      <Text italic>{`${r.quoteBy === 'user' ? w.byYou : w.byClaude}: ${r.quote}`}</Text>
+                    ) : null}
                   </Box>
                 </Box>
               )

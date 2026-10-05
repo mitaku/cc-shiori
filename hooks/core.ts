@@ -62,6 +62,9 @@ export type Words = {
   lastSeen: (turn: number) => string
   jump: string
   notFound: string
+  cannotScroll: string
+  byYou: string
+  byClaude: string
 }
 
 const EN: Words = {
@@ -83,7 +86,10 @@ const EN: Words = {
   opened: 'Opened the shiori pane.',
   lastSeen: turn => `last mentioned in turn ${turn}`,
   jump: 'go to mention',
-  notFound: 'No message on screen mentions it yet',
+  notFound: 'No message mentioning it is known yet',
+  cannotScroll: 'Could not scroll to it',
+  byYou: 'you',
+  byClaude: 'Claude',
 }
 
 const JA: Words = {
@@ -105,7 +111,10 @@ const JA: Words = {
   opened: '栞を開きました。',
   lastSeen: turn => `最後に出たのは ${turn} ターン目`,
   jump: '発言へ移動',
-  notFound: 'この ID が出てくる発言は、まだ読み込まれていません',
+  notFound: 'この ID が出てくる発言は、まだ控えていません',
+  cannotScroll: 'その発言へ移動できませんでした',
+  byYou: 'あなた',
+  byClaude: 'Claude',
 }
 
 export type Locale = { words: Words; language: string }
@@ -291,29 +300,67 @@ export const norm = (id: string) => id.toLowerCase().replace(/\s+/g, '')
  * Whether `text` mentions the reference: its id as written, the `#12` of an `owner/repo#12`
  * (a bare number is too loose), or the last segment of a qualified id when it is 3+ characters.
  */
-export const mentions = (id: string, text: string): boolean => {
+export const mentions = (id: string, text: string): boolean => mentionAt(id, text) !== null
+
+/** Where `text` mentions the reference (the last such place), by the rules of `mentions`; null when it does not. */
+export const mentionAt = (id: string, text: string): { at: number; len: number } | null => {
   const hay = text.toLowerCase()
   const lid = id.toLowerCase().trim()
-  if (!lid) return false
-  if (hasToken(hay, lid)) return true
+  if (!lid) return null
+  let at = tokenAt(hay, lid)
+  if (at >= 0) return { at, len: lid.length }
   const num = lid.match(/#(\d+)$/)?.[1]
-  if (num && new RegExp(`(^|[^\\w/])#${num}(?!\\d)`).test(hay)) return true
+  if (num) {
+    const re = new RegExp(`(^|[^\\w/])(#${num})(?!\\d)`, 'g')
+    let m: RegExpExecArray | null
+    let last: { at: number; len: number } | null = null
+    while ((m = re.exec(hay))) last = { at: m.index + m[1].length, len: m[2].length }
+    if (last) return last
+  }
   const tail = lid.split(/[/#@]/).filter(Boolean).at(-1) ?? lid
-  return tail !== lid && tail.length >= 3 && hasToken(hay, tail)
+  if (tail !== lid && tail.length >= 3) {
+    at = tokenAt(hay, tail)
+    if (at >= 0) return { at, len: tail.length }
+  }
+  return null
 }
 
-/** `needle` in `hay` with no letter or digit right before or after it (so ODK-123 is not in ODK-1234). */
-const hasToken = (hay: string, needle: string): boolean => {
+/** The last place `needle` stands in `hay` with no letter or digit right before or after it (so ODK-123 is not in ODK-1234); -1 when none. */
+const tokenAt = (hay: string, needle: string): number => {
   const word = /[\p{L}\p{N}]/u
+  let found = -1
   for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + 1)) {
     const before = at > 0 ? hay[at - 1] : ''
     const after = hay[at + needle.length] ?? ''
     const edgeBefore = !word.test(needle[0]) || !before || !/[a-z0-9]/.test(before)
     const edgeAfter = !word.test(needle.at(-1) ?? '') || !after || !/[a-z0-9]/.test(after)
-    if (edgeBefore && edgeAfter) return true
+    if (edgeBefore && edgeAfter) found = at
   }
-  return false
+  return found
 }
+
+/** The words around a mention, on one line: `…before ID after…`, at most `radius` characters each side. */
+export const excerpt = (text: string, at: number, len: number, radius = 70): string => {
+  const flat = (s: string) => s.replace(/\s+/g, ' ')
+  const start = Math.max(0, at - radius)
+  const end = Math.min(text.length, at + len + radius)
+  return `${start > 0 ? '…' : ''}${flat(text.slice(start, end)).trim()}${end < text.length ? '…' : ''}`
+}
+
+type QuoteSource = { role: 'user' | 'assistant'; text: string }
+
+/** For each ref, the latest message that mentions it and the words around the mention. */
+export const quotesFor = (refs: readonly Ref[], messages: readonly QuoteSource[]): Ref[] =>
+  refs.map(r => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i]
+      if (!m.text) continue
+      const text = clean(m.text)
+      const hit = mentionAt(r.id, text)
+      if (hit) return { ...r, quote: excerpt(text, hit.at, hit.len), quoteBy: m.role }
+    }
+    return r
+  })
 
 /**
  * Folds the reply's refs into the previous index: a new or changed entry, or one this turn

@@ -1,6 +1,6 @@
 {
   "name": "shiori",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Keeps where a session stands (purpose, status, what waits on you, next, done, decisions) and an index of the tickets, PRs, issues and tasks it mentions, above the prompt and in a pane",
   "author": { "name": "mitaku" },
   "license": "MIT",

@@ -10,6 +10,10 @@ export type Ref = {
   what: string
   /** The turn it was last mentioned or changed in; the index sorts on it. */
   turn: number
+  /** The words around its latest mention in the conversation, on one line. */
+  quote?: string
+  /** Whose message that mention is in. */
+  quoteBy?: 'user' | 'assistant'
 }
 
 /** Where the session stands. */

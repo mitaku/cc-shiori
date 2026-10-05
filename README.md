@@ -38,7 +38,8 @@ When you run several sessions in parallel and switch between them, you lose trac
   [A-Z][A-Z0-9_]+-\d+ => https://example.backlog.jp/view/{id}
   ```
 
-- Hovering an index row opens its details beneath it: the full description, kind, URL and the turn it was last mentioned in (where the surface has a pointer).
+- Hovering an index row opens its details beneath it: the full description, kind, URL, the turn it was last mentioned in, and **the words around its latest mention** with who said them (where the surface has a pointer).
+- On the terminal each row also has `↥`, which scrolls the transcript to that latest mention (the desktop app refuses a plugin's transcript scroll, so the quote stands in for it there).
 
 ## How it works
 
