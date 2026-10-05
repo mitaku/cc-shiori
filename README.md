@@ -35,6 +35,8 @@ Haiku tells what waits and of which kind. When the final answer ends in a questi
 /reload-plugins
 ```
 
+Checked on Claude Code 2.1.289. The mod (function hooks) API is still early access, so a Claude Code update may break it.
+
 ## Use
 
 - Work as usual; the shiori updates after each main-conversation turn, without holding the turn up.
@@ -65,6 +67,10 @@ Haiku tells what waits and of which kind. When the final answer ends in a questi
 ## Cost
 
 One Haiku call per main turn, through the session's own account and provider; the pane shows the count. Disable the plugin in `/plugin` to stop it.
+
+## What it keeps
+
+Each session's shiori (purpose, status, decisions, the index …) is saved **in plain text** under `~/.claude/plugins/store/`, the latest 200 sessions kept. The index holds **verbatim excerpts of the conversation** where each id came up; keep that in mind for work conversations. To remove it, disable the plugin in `/plugin` and delete that store.
 
 ## Related
 
