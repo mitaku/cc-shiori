@@ -29,6 +29,17 @@ When you run several sessions in parallel and switch between them, you lose trac
 - `/shiori` opens the pane; `/shiori refresh` rewrites it from the latest turns.
 - Labels and text follow Claude Code's `language` setting.
 
+### Index links and details
+
+- An index id links to its page when the URL is known: GitHub pull requests, issues and commits (`owner/repo#12`, `owner/repo@sha`, or `#12` in the session's own repository) need no setup.
+- For other trackers (Backlog, Jira …) set **Index links** in `/config` (`shiori.linkRules` under `pluginConfigs`): `regex => URL template` entries separated by `;`, `{id}` the whole id and `{1}` `{2}` the pattern's groups.
+
+  ```text
+  [A-Z][A-Z0-9_]+-\d+ => https://example.backlog.jp/view/{id}
+  ```
+
+- Hovering an index row opens its details beneath it: the full description, kind, URL and the turn it was last mentioned in (where the surface has a pointer).
+
 ## How it works
 
 - After each main turn, Haiku gets the previous shiori and the new turn only (the request, the final answer, and the main tool actions — never file reads or search results) and returns the updated one.

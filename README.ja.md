@@ -42,6 +42,17 @@ Claude Code の mod です。セッションごとに「栞」を挟みます。
 
 言語は Claude Code の `language` 設定に従います（`Japanese` なら見出しも中身も日本語）。
 
+### 索引のリンクと詳細
+
+- 索引の ID は、URL が分かればリンクになります（クリックで開く）。GitHub の PR・Issue・コミット（`owner/repo#12`、`owner/repo@sha`、今の repo での `#12`）は設定なしで。
+- それ以外（Backlog、Jira など）は、`/config` の **Index links**（`pluginConfigs` の `shiori.linkRules`）に `正規表現 => URL の型` を `;` 区切りで書きます。`{id}` は ID 全体、`{1}` `{2}` は正規表現のグループです。
+
+  ```text
+  [A-Z][A-Z0-9_]+-\d+ => https://example.backlog.jp/view/{id}
+  ```
+
+- 索引の行にポインタを乗せると、その下に中身の全文・種類・URL・最後に出てきたターンが開きます（ポインタが使える画面で）。
+
 ## 仕組み
 
 - 本体のターンが終わるたびに、**前回の栞と新しいターン**（依頼・最終回答・主なツール操作）だけを Haiku に渡して、栞を更新します。会話全体は送りません。ファイルの読み込みや検索の結果も送りません。

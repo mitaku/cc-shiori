@@ -11,15 +11,18 @@ import {
   emptyLive,
   emptyUsage,
   fallbackGist,
+  githubRepoOf,
   localeFor,
   mergeRefs,
+  parseLinkRules,
   parseReply,
+  refUrl,
   systemPrompt,
   turnKeyOf,
   turnText,
   turnsFrom,
 } from './core'
-import type { Locale } from './core'
+import type { GitHubRepo, LinkRule, Locale } from './core'
 
 // shiori: where a session stands, and an index of the IDs it mentions.
 // After each main-loop turn a small model updates the record from the previous record and
@@ -38,6 +41,14 @@ let ask: string | null = null
 let activity: string[] = []
 let isBusy = false
 let isQueued = false
+/** The session's GitHub repository, for bare `#12` and commit ids; null elsewhere. */
+let repo: GitHubRepo | null = null
+/** The `linkRules` option: where other ids (Backlog, Jira …) link to. */
+let rules: LinkRule[] = []
+
+async function refreshRepo($: EngineInterface) {
+  repo = githubRepoOf((await $.session.repo())?.remote)
+}
 
 /**
  * Whether anyone draws this session. `session.start`'s `isInteractive` cannot tell: the desktop
@@ -180,9 +191,12 @@ const KIND_TAG: Record<Ref['kind'], string> = {
   other: '',
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  rules = parseLinkRules((options as Record<string, unknown> | undefined)?.linkRules)
+
   on('session.start', async ($, e, next) => {
     await refreshLocale($)
+    await refreshRepo($)
     await $.command.register({
       name: 'shiori',
       description: 'Where this session stands: purpose, status, what waits on you, next, and an index of the IDs it mentions. `refresh` rewrites it.',
@@ -288,7 +302,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { Box, Text, Button, Link } = $.ui.resolve(e)
     const cur = await read($, live)
     const w = locale.words
     const g = cur.gist
@@ -326,13 +340,35 @@ export const register: Register = on => {
               {w.refs}
             </Text>
             {g.refs.length === 0 ? <Text dimColor>{w.none}</Text> : null}
-            {g.refs.map(r => (
-              <Box key={`ref-${r.id}`}>
-                <Text bold>{r.id}</Text>
-                {KIND_TAG[r.kind] ? <Text dimColor>{` ${KIND_TAG[r.kind]}`}</Text> : null}
-                <Text>{`  ${r.what}`}</Text>
-              </Box>
-            ))}
+            {g.refs.map(r => {
+              const url = refUrl(r, repo, rules)
+              const tag = KIND_TAG[r.kind]
+              // One line per id (the id a link where it has a URL); hovering the line opens its
+              // details beneath it, in the flow, so nothing is drawn over other rows.
+              return (
+                <Box key={`ref-${r.id}`} flexDirection="column">
+                  <Box>
+                    {url ? <Link href={url} label={r.id} /> : <Text bold>{r.id}</Text>}
+                    {tag ? <Text dimColor>{` ${tag}`}</Text> : null}
+                    <Text wrap="truncate-end">{`  ${r.what}`}</Text>
+                  </Box>
+                  <Box
+                    display="none"
+                    hover={{ display: 'flex' }}
+                    flexDirection="column"
+                    marginLeft={2}
+                    paddingX={1}
+                    borderStyle="round"
+                    borderDimColor
+                  >
+                    <Text>{r.what || w.none}</Text>
+                    <Text dimColor wrap="truncate-end">
+                      {[tag, url, w.lastSeen(r.turn)].filter(Boolean).join('  ·  ')}
+                    </Text>
+                  </Box>
+                </Box>
+              )
+            })}
           </Box>
         ) : null}
         {tail.map(([title, items]) => (

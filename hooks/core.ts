@@ -59,6 +59,7 @@ export type Words = {
   none: string
   refreshed: string
   opened: string
+  lastSeen: (turn: number) => string
 }
 
 const EN: Words = {
@@ -78,6 +79,7 @@ const EN: Words = {
   none: '—',
   refreshed: 'Summary refreshed.',
   opened: 'Opened the shiori pane.',
+  lastSeen: turn => `last mentioned in turn ${turn}`,
 }
 
 const JA: Words = {
@@ -97,6 +99,7 @@ const JA: Words = {
   none: '—',
   refreshed: '要約を作り直しました。',
   opened: '栞を開きました。',
+  lastSeen: turn => `最後に出たのは ${turn} ターン目`,
 }
 
 export type Locale = { words: Words; language: string }
@@ -314,3 +317,77 @@ export const fallbackGist = (prev: Gist | null, turn: Turn): Gist | undefined =>
 
 export const turnText = (turns: readonly Turn[]) =>
   turns.map(t => `${t.ask ?? ''}\n${t.activity.join('\n')}\n${t.answer}`).join('\n')
+
+// ---------- links ----------
+
+export type GitHubRepo = { owner: string; name: string }
+
+/** The GitHub repository an `origin` remote names (ssh, scp-like or https form); null for another host. */
+export const githubRepoOf = (remote: string | null | undefined): GitHubRepo | null => {
+  if (!remote) return null
+  const m = remote.trim().match(/^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/)
+  return m ? { owner: m[1], name: m[2] } : null
+}
+
+/** A user's rule: ids the pattern matches (whole id) link to the template's URL. */
+export type LinkRule = { pattern: RegExp; template: string }
+
+/**
+ * Reads the `linkRules` option: `regex => https://host/path/{id}` entries separated by `;` or new
+ * lines. `{id}` is the whole id, `{1}`, `{2}` … the pattern's groups, each URL-encoded. A rule whose
+ * pattern does not compile is skipped.
+ */
+export const parseLinkRules = (spec: unknown): LinkRule[] => {
+  if (typeof spec !== 'string') return []
+  return spec
+    .split(/[;\n]/)
+    .map(entry => entry.split('=>'))
+    .flatMap(([pattern, template]) => {
+      const p = pattern?.trim()
+      const t = template?.trim()
+      if (!p || !t) return []
+      try {
+        return [{ pattern: new RegExp(`^(?:${p})$`), template: t }]
+      } catch {
+        return []
+      }
+    })
+}
+
+/** An https URL spelled as `new URL(href).href`, or undefined (the Link element takes no other). */
+export const safeUrl = (s: string): string | undefined => {
+  try {
+    const u = new URL(s)
+    return u.protocol === 'https:' ? u.href : undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Where a reference links to: a user's rule first; then GitHub, for `owner/repo#12`, a bare `#12`
+ * or `12` of a pr or issue in the session's own GitHub repository (`/issues/12` reaches a pull
+ * request too), `owner/repo@sha` and a commit sha there; an id that is itself an https URL.
+ */
+export const refUrl = (ref: Pick<Ref, 'id' | 'kind'>, repo: GitHubRepo | null, rules: readonly LinkRule[]): string | undefined => {
+  const id = ref.id.trim()
+  for (const rule of rules) {
+    const m = id.match(rule.pattern)
+    if (!m) continue
+    const url = rule.template
+      .replace(/\{id\}/g, encodeURIComponent(id))
+      .replace(/\{(\d)\}/g, (_, i: string) => encodeURIComponent(m[Number(i)] ?? ''))
+    return safeUrl(url)
+  }
+  const gh = (owner: string, name: string, path: string) => safeUrl(`https://github.com/${owner}/${name}/${path}`)
+  let m = id.match(/^([\w.-]+)\/([\w.-]+)#(\d+)$/)
+  if (m) return gh(m[1], m[2], `issues/${m[3]}`)
+  m = id.match(/^([\w.-]+)\/([\w.-]+)@([0-9a-f]{7,40})$/i)
+  if (m) return gh(m[1], m[2], `commit/${m[3]}`)
+  if (repo) {
+    m = id.match(/^(?:#|PR\s*#?|Issue\s*#?)?(\d+)$/i)
+    if (m && (ref.kind === 'pr' || ref.kind === 'issue' || id.startsWith('#'))) return gh(repo.owner, repo.name, `issues/${m[1]}`)
+    if (ref.kind === 'commit' && /^[0-9a-f]{7,40}$/i.test(id)) return gh(repo.owner, repo.name, `commit/${id}`)
+  }
+  return /^https:\/\//.test(id) ? safeUrl(id) : undefined
+}
