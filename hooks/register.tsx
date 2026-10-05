@@ -256,6 +256,9 @@ async function closePane($: EngineInterface) {
   await $.ui.close({ id: PANE })
 }
 
+/** The kind column: the widest tag (`Commit`, `Ticket`) and a space. */
+const TAG_WIDTH = 8
+
 const KIND_TAG: Record<Ref['kind'], string> = {
   pr: 'PR',
   issue: 'Issue',
@@ -442,6 +445,11 @@ export const register: Register = (on, options) => {
     const g = cur.gist
     const rows = (items: readonly string[]) => (items.length ? items : [w.none])
     const pending = g ? normalizeGist(g).pending : []
+    // The id column fits the longest id, up to two fifths of the pane.
+    const idWidth = Math.min(
+      Math.max(8, ...(g?.refs ?? []).map(r => r.id.length + 2)),
+      Math.max(12, Math.floor(e.props.bodyColumns * 0.4)),
+    )
     const sections: [string, readonly string[]][] = g
       ? [
           [w.purpose, [g.purpose]],
@@ -504,18 +512,30 @@ export const register: Register = (on, options) => {
             {g.refs.map(r => {
               const url = refUrl(r, repo, rules)
               const tag = KIND_TAG[r.kind]
-              // One line per id (the id a link where it has a URL); hovering the line opens its
-              // details beneath it, in the flow, so nothing is drawn over other rows.
+              // One line per id, in columns: the id (a link where it has a URL), its kind, what it
+              // is, then the buttons at the right end. Hovering the line opens its details beneath
+              // it, in the flow, so nothing is drawn over other rows.
               return (
                 <Box key={`ref-${r.id}`} flexDirection="column">
                   <Box>
-                    {url ? <Link href={url} label={r.id} /> : <Text bold>{r.id}</Text>}
-                    {tag ? <Text dimColor>{` ${tag}`}</Text> : null}
-                    {canScroll ? <Text> </Text> : null}
-                    {canScroll ? <Button key={`go-${r.id}`} label="↥" onPress={() => void jumpTo($, r.id)} /> : null}
-                    {url ? <Text> </Text> : null}
-                    {url ? <Button key={`copy-${r.id}`} label="⧉" onPress={() => void copyUrl($, url, e.surface)} /> : null}
-                    <Text wrap="truncate-end">{`  ${r.what}`}</Text>
+                    <Box width={idWidth} flexShrink={0}>
+                      {url ? <Link href={url} label={r.id} /> : <Text bold wrap="truncate-end">{r.id}</Text>}
+                    </Box>
+                    <Box width={TAG_WIDTH} flexShrink={0}>
+                      <Text dimColor>{tag}</Text>
+                    </Box>
+                    <Box flexGrow={1} flexShrink={1}>
+                      <Text wrap="truncate-end">{r.what}</Text>
+                    </Box>
+                    {/* A link opens on the desktop; a terminal (a container with no browser) copies it instead. */}
+                    {canScroll ? (
+                      <Box flexShrink={0}>
+                        <Text> </Text>
+                        <Button key={`go-${r.id}`} label="↥" onPress={() => void jumpTo($, r.id)} />
+                        {url ? <Text> </Text> : null}
+                        {url ? <Button key={`copy-${r.id}`} label="⧉" onPress={() => void copyUrl($, url, e.surface)} /> : null}
+                      </Box>
+                    ) : null}
                   </Box>
                   <Box
                     display="none"
