@@ -13,7 +13,6 @@ import {
   emptyLive,
   emptyUsage,
   fallbackGist,
-  githubRepoOf,
   localeFor,
   mentions,
   mergeRefs,
@@ -29,7 +28,7 @@ import {
   turnsFrom,
   withClosingQuestion,
 } from './core'
-import type { GitHubRepo, LinkRule, Locale } from './core'
+import type { LinkRule, Locale } from './core'
 
 // shiori: where a session stands, and an index of the IDs it mentions.
 // After each main-loop turn a small model updates the record from the previous record and
@@ -54,14 +53,8 @@ let ask: string | null = null
 let activity: string[] = []
 let isBusy = false
 let isQueued = false
-/** The session's GitHub repository, for bare `#12` and commit ids; null elsewhere. */
-let repo: GitHubRepo | null = null
 /** The `linkRules` option: where other ids (Backlog, Jira …) link to. */
 let rules: LinkRule[] = []
-
-async function refreshRepo($: EngineInterface) {
-  repo = githubRepoOf((await $.session.repo())?.remote)
-}
 
 // The transcript rows drawn so far, in the order first drawn, each with its requestId (the
 // message id) and text (lowercased, capped): what "go to the mention" (↥, terminal only) searches,
@@ -273,7 +266,6 @@ export const register: Register = (on, options) => {
 
   on('session.start', async ($, e, next) => {
     await refreshLocale($)
-    await refreshRepo($)
     await $.command.register({
       name: 'shiori',
       description: 'Where this session stands: purpose, status, what waits on you, next, and an index of the IDs it mentions. `refresh` rewrites it from the latest turns; `refresh --hard` drops it and its index and starts over.',
@@ -522,7 +514,7 @@ export const register: Register = (on, options) => {
             </Text>
             {g.refs.length === 0 ? <Text dimColor>{w.none}</Text> : null}
             {g.refs.map(r => {
-              const url = refUrl(r, repo, rules)
+              const url = refUrl(r, rules)
               const tag = KIND_TAG[r.kind]
               // One line per id, in columns: the id (a link where it has a URL), its kind, what it
               // is, then the buttons at the right end. Hovering the line opens its details beneath

@@ -473,15 +473,6 @@ export const turnText = (turns: readonly Turn[]) =>
 
 // ---------- links ----------
 
-export type GitHubRepo = { owner: string; name: string }
-
-/** The GitHub repository an `origin` remote names (ssh, scp-like or https form); null for another host. */
-export const githubRepoOf = (remote: string | null | undefined): GitHubRepo | null => {
-  if (!remote) return null
-  const m = remote.trim().match(/^(?:https:\/\/|ssh:\/\/git@|git@)github\.com[:/]([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/)
-  return m ? { owner: m[1], name: m[2] } : null
-}
-
 /** A user's rule: ids the pattern matches (whole id) link to the template's URL. */
 export type LinkRule = { pattern: RegExp; template: string }
 
@@ -518,11 +509,13 @@ export const safeUrl = (s: string): string | undefined => {
 }
 
 /**
- * Where a reference links to: a user's rule first; then GitHub, for `owner/repo#12`, a bare `#12`
- * or `12` of a pr or issue in the session's own GitHub repository (`/issues/12` reaches a pull
- * request too), `owner/repo@sha` and a commit sha there; an id that is itself an https URL.
+ * Where a reference links to, from the id as the session wrote it and nothing outside the session:
+ * a user's rule first; then GitHub, for `owner/repo#12` (`/issues/12` reaches a pull request too)
+ * and `owner/repo@sha`; an id that is itself an https URL. A bare `#12` or sha does not link: which
+ * repository it is in is not the cwd's to guess (a session works across repositories), and no link
+ * is better than one to the wrong place.
  */
-export const refUrl = (ref: Pick<Ref, 'id' | 'kind'>, repo: GitHubRepo | null, rules: readonly LinkRule[]): string | undefined => {
+export const refUrl = (ref: Pick<Ref, 'id'>, rules: readonly LinkRule[]): string | undefined => {
   const id = ref.id.trim()
   for (const rule of rules) {
     const m = id.match(rule.pattern)
@@ -537,10 +530,5 @@ export const refUrl = (ref: Pick<Ref, 'id' | 'kind'>, repo: GitHubRepo | null, r
   if (m) return gh(m[1], m[2], `issues/${m[3]}`)
   m = id.match(/^([\w.-]+)\/([\w.-]+)@([0-9a-f]{7,40})$/i)
   if (m) return gh(m[1], m[2], `commit/${m[3]}`)
-  if (repo) {
-    m = id.match(/^(?:#|PR\s*#?|Issue\s*#?)?(\d+)$/i)
-    if (m && (ref.kind === 'pr' || ref.kind === 'issue' || id.startsWith('#'))) return gh(repo.owner, repo.name, `issues/${m[1]}`)
-    if (ref.kind === 'commit' && /^[0-9a-f]{7,40}$/i.test(id)) return gh(repo.owner, repo.name, `commit/${id}`)
-  }
   return /^https:\/\//.test(id) ? safeUrl(id) : undefined
 }

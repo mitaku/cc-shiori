@@ -41,7 +41,7 @@ Haiku tells what waits and of which kind. When the final answer ends in a questi
 ### Index links and details
 
 - Where a link cannot open (a container with no browser, a multiplexer that drops hyperlinks), a row with a URL has `⧉` on a terminal (the desktop opens the link, so it has none): it copies the URL to the clipboard, the way `/copy` does (OSC 52 and the like).
-- An index id links to its page when the URL is known: GitHub pull requests, issues and commits (`owner/repo#12`, `owner/repo@sha`, or `#12` in the session's own repository) need no setup.
+- An index id links to its page when the URL is known: GitHub pull requests, issues and commits (`owner/repo#12`, `owner/repo@sha`) need no setup. A bare `#12` or sha does not link: guessing its repository from the working directory sends a session that spans repositories to the wrong place.
 - For other trackers (Backlog, Jira …) set **Index links** in `/config` (`shiori.linkRules` under `pluginConfigs`): `regex => URL template` entries separated by `;`, `{id}` the whole id and `{1}` `{2}` the pattern's groups.
 
   ```text
@@ -53,6 +53,7 @@ Haiku tells what waits and of which kind. When the final answer ends in a questi
 
 ## How it works
 
+- **A shiori stays inside its session.** It is made from that session's conversation alone: never another session, nor the working directory's files or git state. Looking across sessions is the terminal's job (herdr's sidebar and the like).
 - After each main turn, Haiku gets the previous shiori and the new turn only (the request, the final answer, and the main tool actions — never file reads or search results) and returns the updated one.
 - The index is what the session understood each reference to be. Entries the model drops are kept; new or changed ones move to the top.
 - Each session's shiori is saved in the mod's store (`~/.claude/plugins/store/`), the latest 200 kept. A resumed session shows its saved shiori when it is current, else rewrites it. `/clear` starts over.
