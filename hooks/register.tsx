@@ -4,9 +4,11 @@ import type { EngineInterface, Register } from 'claude-code'
 import type { Gist, Live, Ref, Saved, Turn } from '../types'
 import {
   LIMITS,
+  PENDING_MARK,
   buildPrompt,
   clean,
   clip,
+  closingQuestion,
   describeTool,
   emptyLive,
   emptyUsage,
@@ -15,7 +17,9 @@ import {
   localeFor,
   mentions,
   mergeRefs,
+  normalizeGist,
   parseLinkRules,
+  pendingCounts,
   parseReply,
   quotesFor,
   refUrl,
@@ -23,6 +27,7 @@ import {
   turnKeyOf,
   turnText,
   turnsFrom,
+  withClosingQuestion,
 } from './core'
 import type { GitHubRepo, LinkRule, Locale } from './core'
 
@@ -34,6 +39,8 @@ const PANE = 'shiori'
 const STORE_PREFIX = 'shiori:'
 const STORE_MAX = 200
 const ACCENT = 'cyan'
+/** What waits on the user: the same yellow as the count of it in the band. */
+const WAITING = 'yellow'
 
 const live = atom({ plugin: 'shiori', key: 'live' } as const, emptyLive())
 
@@ -166,7 +173,11 @@ async function summarize($: EngineInterface) {
       if (!r.isAnswered) $.ui.log(`shiori: no summary (${r.reason})`, { to: 'debug' })
       const fresh = cur.turns.filter(t => t.n > cur.gistTurn)
       const merged: Gist | undefined = parsed
-        ? { ...parsed, refs: mergeRefs(cur.gist?.refs ?? [], parsed.refs, last.n, turnText(fresh)) }
+        ? {
+            ...parsed,
+            pending: withClosingQuestion(parsed.pending, last.question),
+            refs: mergeRefs(cur.gist?.refs ?? [], parsed.refs, last.n, turnText(fresh)),
+          }
         : fallbackGist(cur.gist, last)
       // Each id's latest mention, quoted from the whole conversation (no drawing needed, so past
       // messages count and it works where the transcript cannot be scrolled to, as on the desktop).
@@ -206,7 +217,7 @@ async function openSession($: EngineInterface, epoch: number) {
       ...l,
       sessionId: id,
       turns: merged,
-      gist: saved?.gist ?? l.gist,
+      gist: saved ? normalizeGist(saved.gist) : l.gist,
       gistTurn: isCurrent ? (last?.n ?? 0) : Math.max(0, merged.length - LIMITS.turnsPerRequest),
       usage: saved?.usage ?? l.usage,
     }
@@ -292,12 +303,14 @@ export const register: Register = (on, options) => {
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
     if (e.agentId !== undefined) return done
-    const answer = clip(clean(done.text ?? ''), LIMITS.answer)
+    const full = clean(done.text ?? '')
+    const answer = clip(full, LIMITS.answer)
+    const question = closingQuestion(full)
     const recorded = { ask, activity }
     ask = null
     activity = []
     await update($, live, l => {
-      const turn: Turn = { n: (l.turns.at(-1)?.n ?? 0) + 1, ask: recorded.ask, answer, activity: recorded.activity }
+      const turn: Turn = { n: (l.turns.at(-1)?.n ?? 0) + 1, ask: recorded.ask, answer, activity: recorded.activity, question }
       return { ...l, turns: [...l.turns, turn].slice(-LIMITS.turns) }
     })
     $.clock.after(0, () => void summarize($))
@@ -340,23 +353,40 @@ export const register: Register = (on, options) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const w = locale.words
     const g = cur.gist
-    const waiting = g?.pending.length ?? 0
+    const counts = pendingCounts(g ? normalizeGist(g).pending : [])
+    // The state comes first and never shrinks, so a long status cannot push it out of sight:
+    // `?2 ◇1 !1` what waits on you, else ● working, ✓ nothing next, ○ idle.
+    const state =
+      counts.length > 0 ? (
+        <Text color={WAITING} bold>
+          {counts.map(c => `${c.mark}${c.n}`).join(' ')}
+        </Text>
+      ) : e.props.isWorking ? (
+        <Text color={ACCENT}>●</Text>
+      ) : g && !g.next ? (
+        <Text color="green">✓</Text>
+      ) : (
+        <Text dimColor>○</Text>
+      )
 
     return (
       <Box flexDirection="column">
         <Box>
-          <Text color={ACCENT}>{w.purpose} </Text>
-          <Text wrap="truncate-end">{g?.purpose ?? w.notYet}</Text>
+          <Box flexShrink={0}>{state}</Box>
+          <Text> </Text>
+          <Box flexGrow={1} flexShrink={1}>
+            <Text wrap="truncate-end">{g?.status ?? w.notYet}</Text>
+          </Box>
+          <Box flexShrink={0}>
+            <Text> </Text>
+            <Button key="details" label={w.details} onPress={() => void openPane($)} />
+          </Box>
         </Box>
         <Box>
-          <Text color={ACCENT}>{w.status} </Text>
-          <Text wrap="truncate-end">
-            {g?.status ?? w.notYet}
-            {e.props.isWorking ? ` ${w.working}` : ''}
+          <Text color={ACCENT}>{w.purpose} </Text>
+          <Text dimColor wrap="truncate-end">
+            {g?.purpose ?? w.notYet}
           </Text>
-          {waiting > 0 ? <Text color="yellow">{`  · ${w.waiting(waiting)}`}</Text> : null}
-          <Text> </Text>
-          <Button key="details" label={w.details} onPress={() => void openPane($)} />
         </Box>
       </Box>
     )
@@ -370,14 +400,14 @@ export const register: Register = (on, options) => {
     const w = locale.words
     const g = cur.gist
     const rows = (items: readonly string[]) => (items.length ? items : [w.none])
+    const pending = g ? normalizeGist(g).pending : []
     const sections: [string, readonly string[]][] = g
       ? [
           [w.purpose, [g.purpose]],
           [w.status, [g.status]],
-          [w.pending, rows(g.pending)],
-          [w.next, rows(g.next ? [g.next] : [])],
         ]
       : [[w.purpose, [w.notYet]]]
+    const after: [string, readonly string[]][] = g ? [[w.next, rows(g.next ? [g.next] : [])]] : []
     const tail: [string, readonly string[]][] = g
       ? [
           [w.done, rows(g.done)],
@@ -394,6 +424,33 @@ export const register: Register = (on, options) => {
             </Text>
             {items.map((item, i) => (
               <Text key={`${title}-${i}`}>{items.length > 1 ? `• ${item}` : item}</Text>
+            ))}
+          </Box>
+        ))}
+        {g ? (
+          <Box key="s-pending" flexDirection="column">
+            <Text color={ACCENT} bold>
+              {w.pending}
+            </Text>
+            {pending.length === 0 ? <Text dimColor>{w.none}</Text> : null}
+            {pending.map((p, i) => (
+              <Box key={`p-${i}`}>
+                <Box flexShrink={0}>
+                  <Text color={WAITING} bold>{`${PENDING_MARK[p.kind]} `}</Text>
+                  <Text dimColor>{`${w.kinds[p.kind]}  `}</Text>
+                </Box>
+                <Text>{p.text}</Text>
+              </Box>
+            ))}
+          </Box>
+        ) : null}
+        {after.map(([title, items]) => (
+          <Box key={`a-${title}`} flexDirection="column">
+            <Text color={ACCENT} bold>
+              {title}
+            </Text>
+            {items.map((item, i) => (
+              <Text key={`${title}-${i}`}>{item}</Text>
             ))}
           </Box>
         ))}

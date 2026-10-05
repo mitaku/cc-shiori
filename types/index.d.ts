@@ -16,13 +16,22 @@ export type Ref = {
   quoteBy?: 'user' | 'assistant'
 }
 
+/** What a waiting item asks of the user: an answer, a choice, or something done by hand. */
+export type PendingKind = 'question' | 'decision' | 'action'
+
+/** One thing Claude waits on the user for. */
+export type Pending = {
+  kind: PendingKind
+  text: string
+}
+
 /** Where the session stands. */
 export type Gist = {
   purpose: string
   status: string
   done: string[]
   decisions: string[]
-  pending: string[]
+  pending: Pending[]
   next: string
   refs: Ref[]
 }
@@ -35,6 +44,8 @@ export type Turn = {
   answer: string
   /** What the turn did with its tools, one line each. */
   activity: string[]
+  /** The question the answer ended on, if it did (read before the answer is capped). */
+  question?: string
 }
 
 export type Usage = { calls: number; input: number; output: number }

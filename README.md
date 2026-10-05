@@ -11,9 +11,18 @@ When you run several sessions in parallel and switch between them, you lose trac
 
 ## What it shows
 
-**Above the prompt**: purpose and status, `(working)` while a turn runs, how many things wait on you, and a `details` button.
+**Above the prompt**: a mark, the status and a `details` button on the first line, the purpose on the second. The mark comes first, so a long status never pushes it out of sight.
 
-**The pane** (`/shiori` or `details`): purpose, status, waiting on you, next, the index (newest mention first), and the latest done items and decisions.
+| Mark | Meaning |
+|---|---|
+| `?2 ◇1 !1` (yellow) | what waits on you, by kind: `?` a question to answer, `◇` a decision (a choice or an approval), `!` something to do by hand (open a URL, sign in, run a command, check a screen) |
+| `●` | working (nothing waits on you) |
+| `✓` | at a stopping point (nothing next) |
+| `○` | idle |
+
+Haiku tells what waits and of which kind. When the final answer ends in a question and Haiku listed nothing, that question stands as a `?`, so the mark does not hang on the model alone.
+
+**The pane** (`/shiori` or `details`): purpose, status, waiting on you (each with its mark and kind), next, the index (newest mention first), and the latest done items and decisions.
 
 ## Install
 
