@@ -1,4 +1,4 @@
-﻿{
+{
   "name": "shiori",
   "version": "0.3.0",
   "description": "Keeps where a session stands (purpose, status, what waits on you, next, done, decisions) and an index of the tickets, PRs, issues and tasks it mentions, above the prompt and in a pane",
