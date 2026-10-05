@@ -60,6 +60,8 @@ export type Words = {
   refreshed: string
   opened: string
   lastSeen: (turn: number) => string
+  jump: string
+  notFound: string
 }
 
 const EN: Words = {
@@ -80,6 +82,8 @@ const EN: Words = {
   refreshed: 'Summary refreshed.',
   opened: 'Opened the shiori pane.',
   lastSeen: turn => `last mentioned in turn ${turn}`,
+  jump: 'go to mention',
+  notFound: 'No message on screen mentions it yet',
 }
 
 const JA: Words = {
@@ -100,6 +104,8 @@ const JA: Words = {
   refreshed: '要約を作り直しました。',
   opened: '栞を開きました。',
   lastSeen: turn => `最後に出たのは ${turn} ターン目`,
+  jump: '発言へ移動',
+  notFound: 'この ID が出てくる発言は、まだ読み込まれていません',
 }
 
 export type Locale = { words: Words; language: string }
@@ -279,7 +285,35 @@ export const parseReply = (reply: string): (Omit<Gist, 'refs'> & { refs: ParsedR
   }
 }
 
-const norm = (id: string) => id.toLowerCase().replace(/\s+/g, '')
+export const norm = (id: string) => id.toLowerCase().replace(/\s+/g, '')
+
+/**
+ * Whether `text` mentions the reference: its id as written, the `#12` of an `owner/repo#12`
+ * (a bare number is too loose), or the last segment of a qualified id when it is 3+ characters.
+ */
+export const mentions = (id: string, text: string): boolean => {
+  const hay = text.toLowerCase()
+  const lid = id.toLowerCase().trim()
+  if (!lid) return false
+  if (hasToken(hay, lid)) return true
+  const num = lid.match(/#(\d+)$/)?.[1]
+  if (num && new RegExp(`(^|[^\\w/])#${num}(?!\\d)`).test(hay)) return true
+  const tail = lid.split(/[/#@]/).filter(Boolean).at(-1) ?? lid
+  return tail !== lid && tail.length >= 3 && hasToken(hay, tail)
+}
+
+/** `needle` in `hay` with no letter or digit right before or after it (so ODK-123 is not in ODK-1234). */
+const hasToken = (hay: string, needle: string): boolean => {
+  const word = /[\p{L}\p{N}]/u
+  for (let at = hay.indexOf(needle); at >= 0; at = hay.indexOf(needle, at + 1)) {
+    const before = at > 0 ? hay[at - 1] : ''
+    const after = hay[at + needle.length] ?? ''
+    const edgeBefore = !word.test(needle[0]) || !before || !/[a-z0-9]/.test(before)
+    const edgeAfter = !word.test(needle.at(-1) ?? '') || !after || !/[a-z0-9]/.test(after)
+    if (edgeBefore && edgeAfter) return true
+  }
+  return false
+}
 
 /**
  * Folds the reply's refs into the previous index: a new or changed entry, or one this turn
@@ -287,11 +321,7 @@ const norm = (id: string) => id.toLowerCase().replace(/\s+/g, '')
  * should not). Newest first, at most LIMITS.refs.
  */
 export const mergeRefs = (prev: readonly Ref[], next: readonly ParsedRef[], turn: number, turnText: string): Ref[] => {
-  const hay = turnText.toLowerCase()
-  const mentioned = (id: string) => {
-    const tail = id.split(/[/#]/).filter(Boolean).at(-1) ?? id
-    return hay.includes(id.toLowerCase()) || (tail.length >= 3 && hay.includes(tail.toLowerCase()))
-  }
+  const mentioned = (id: string) => mentions(id, turnText)
   const byId = new Map(prev.map(r => [norm(r.id), r]))
   for (const r of next) {
     const old = byId.get(norm(r.id))

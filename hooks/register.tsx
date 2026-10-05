@@ -13,6 +13,7 @@ import {
   fallbackGist,
   githubRepoOf,
   localeFor,
+  mentions,
   mergeRefs,
   parseLinkRules,
   parseReply,
@@ -48,6 +49,47 @@ let rules: LinkRule[] = []
 
 async function refreshRepo($: EngineInterface) {
   repo = githubRepoOf((await $.session.repo())?.remote)
+}
+
+// The transcript rows drawn so far, in the order first drawn, each with its text (lowercased,
+// capped): what "go to the mention" searches, newest first. A render hook cannot write $.state,
+// so this is the module's; after a reload it fills again as rows are drawn.
+const ROW_TEXT_MAX = 4000
+const ROWS_MAX = 3000
+let rows: { requestId: string; text: string }[] = []
+const rowIndex = new Map<string, number>()
+
+function noteRow(requestId: string, text: string) {
+  const t = text.slice(0, ROW_TEXT_MAX).toLowerCase()
+  const i = rowIndex.get(requestId)
+  if (i !== undefined) {
+    rows[i] = { requestId, text: t }
+    return
+  }
+  rowIndex.set(requestId, rows.length)
+  rows.push({ requestId, text: t })
+  if (rows.length > ROWS_MAX) {
+    rows = rows.slice(-Math.floor(ROWS_MAX * 0.8))
+    rowIndex.clear()
+    rows.forEach((r, n) => rowIndex.set(r.requestId, n))
+  }
+}
+
+/** The latest drawn transcript row that mentions the id, by its requestId (the message id). */
+function rowMentioning(id: string): string | undefined {
+  for (let i = rows.length - 1; i >= 0; i--) if (mentions(id, rows[i].text)) return rows[i].requestId
+  return undefined
+}
+
+/** Scrolls the transcript to the latest message mentioning the id; a press is the person's input, which a transcript scroll needs. */
+async function jumpTo($: EngineInterface, id: string) {
+  const row = rowMentioning(id)
+  if (row === undefined) {
+    $.ui.toast(locale.words.notFound)
+    return
+  }
+  const r = (await $.ui.scroll({ to: { requestId: row }, block: 'center' })) as { deny?: string }
+  if (r.deny) $.ui.toast(`${locale.words.notFound} (${r.deny})`)
 }
 
 /**
@@ -273,6 +315,17 @@ export const register: Register = (on, options) => {
     return { text: locale.words.opened }
   })
 
+  // Note each transcript row's text as it is drawn, for "go to the mention"; the row is drawn as the engine draws it.
+  on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
+    noteRow(e.requestId, e.props.text)
+    return next(e)
+  })
+
+  on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
+    noteRow(e.requestId, e.props.text)
+    return next(e)
+  })
+
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const cur = await read($, live)
     if (e.props.hasSurvey || (cur.gist === null && cur.turns.length === 0)) return next(e)
@@ -365,6 +418,9 @@ export const register: Register = (on, options) => {
                     <Text dimColor wrap="truncate-end">
                       {[tag, url, w.lastSeen(r.turn)].filter(Boolean).join('  ·  ')}
                     </Text>
+                    <Box>
+                      <Button key={`jump-${r.id}`} label={w.jump} onPress={() => void jumpTo($, r.id)} />
+                    </Box>
                   </Box>
                 </Box>
               )
