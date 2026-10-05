@@ -40,6 +40,7 @@ Haiku tells what waits and of which kind. When the final answer ends in a questi
 
 ### Index links and details
 
+- Where a link cannot open (a container with no browser, a multiplexer that drops hyperlinks), a row with a URL has `⧉`: it copies the URL to the clipboard, the way `/copy` does (OSC 52 and the like).
 - An index id links to its page when the URL is known: GitHub pull requests, issues and commits (`owner/repo#12`, `owner/repo@sha`, or `#12` in the session's own repository) need no setup.
 - For other trackers (Backlog, Jira …) set **Index links** in `/config` (`shiori.linkRules` under `pluginConfigs`): `regex => URL template` entries separated by `;`, `{id}` the whole id and `{1}` `{2}` the pattern's groups.
 

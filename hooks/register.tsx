@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderSurface } from 'claude-code'
 
 import type { Gist, Live, Ref, Saved, Turn } from '../types'
 import {
@@ -93,6 +93,15 @@ function noteRow(requestId: string, text: string) {
 function rowMentioning(id: string): string | undefined {
   for (let i = rows.length - 1; i >= 0; i--) if (mentions(id, rows[i].text)) return rows[i].requestId
   return undefined
+}
+
+/**
+ * Puts a ref's URL on the clipboard: where the terminal cannot open a link (a container with
+ * no browser, a multiplexer that drops the hyperlink), the person pastes it where one can.
+ */
+async function copyUrl($: EngineInterface, url: string, surface: RenderSurface) {
+  const r = await $.ui.copy({ text: url, surface })
+  $.ui.toast(r.isCopied ? locale.words.copied : `${locale.words.notCopied}: ${r.reason}`)
 }
 
 /** Scrolls the transcript to the latest message mentioning the id; a press is the person's input, which a transcript scroll needs. */
@@ -504,6 +513,8 @@ export const register: Register = (on, options) => {
                     {tag ? <Text dimColor>{` ${tag}`}</Text> : null}
                     {canScroll ? <Text> </Text> : null}
                     {canScroll ? <Button key={`go-${r.id}`} label="↥" onPress={() => void jumpTo($, r.id)} /> : null}
+                    {url ? <Text> </Text> : null}
+                    {url ? <Button key={`copy-${r.id}`} label="⧉" onPress={() => void copyUrl($, url, e.surface)} /> : null}
                     <Text wrap="truncate-end">{`  ${r.what}`}</Text>
                   </Box>
                   <Box

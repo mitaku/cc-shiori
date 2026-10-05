@@ -69,6 +69,9 @@ export type Words = {
   cannotScroll: string
   byYou: string
   byClaude: string
+  copy: string
+  copied: string
+  notCopied: string
 }
 
 const EN: Words = {
@@ -95,6 +98,9 @@ const EN: Words = {
   cannotScroll: 'Could not scroll to it',
   byYou: 'you',
   byClaude: 'Claude',
+  copy: 'copy URL',
+  copied: 'Copied the URL.',
+  notCopied: 'Could not copy the URL',
 }
 
 const JA: Words = {
@@ -121,6 +127,9 @@ const JA: Words = {
   cannotScroll: 'その発言へ移動できませんでした',
   byYou: 'あなた',
   byClaude: 'Claude',
+  copy: 'URL をコピー',
+  copied: 'URL をコピーしました。',
+  notCopied: 'URL をコピーできませんでした',
 }
 
 export type Locale = { words: Words; language: string }
