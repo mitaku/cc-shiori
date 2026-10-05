@@ -1,2 +1,4 @@
 node_modules/
-.claude/types/
+# エンジンが mod を読み込むときに書く型定義（.claude-plugin/types/ を指すので一緒に除外）
+tsconfig.json
+.claude-plugin/types/

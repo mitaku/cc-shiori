@@ -34,11 +34,19 @@ const live = atom({ plugin: 'shiori', key: 'live' } as const, emptyLive())
 
 // Module variables start over on a hot reload; the record itself lives in $.state and $.store.
 let locale: Locale = localeFor(undefined)
-let isInteractive = true
 let ask: string | null = null
 let activity: string[] = []
 let isBusy = false
 let isQueued = false
+
+/**
+ * Whether anyone draws this session. `session.start`'s `isInteractive` cannot tell: the desktop
+ * app's Code tab is an SDK host whose surface attaches after the start (`interactive=false`,
+ * `surface=null` there, measured 2026-10-05), so the model is asked only when a surface is on.
+ */
+async function hasSurface($: EngineInterface) {
+  return (await $.session.surfaces()).length > 0
+}
 
 async function refreshLocale($: EngineInterface) {
   const settings = (await $.settings.read()) as Record<string, unknown>
@@ -80,6 +88,7 @@ async function summarize($: EngineInterface) {
       const prompt = buildPrompt(cur)
       const last = cur.turns.at(-1)
       if (prompt === undefined || last === undefined) break
+      if (!(await hasSurface($))) break
       await refreshLocale($)
       const r = await $.model.complete({
         model: 'haiku',
@@ -173,8 +182,6 @@ const KIND_TAG: Record<Ref['kind'], string> = {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    isInteractive = e.isInteractive
-    if (!isInteractive) return next(e)
     await refreshLocale($)
     await $.command.register({
       name: 'shiori',
@@ -187,7 +194,7 @@ export const register: Register = on => {
   })
 
   on('session.end', async ($, e, next) => {
-    if (isInteractive && (e.reason === 'clear' || e.reason === 'resume')) {
+    if (e.reason === 'clear' || e.reason === 'resume') {
       const cur = await read($, live)
       const epoch = cur.epoch + 1
       await update($, live, () => emptyLive(epoch))
@@ -199,7 +206,10 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    if (isInteractive && e.turnId === undefined && (e.origin.kind === 'composer' || e.origin.kind === 'bridge')) {
+    // The user's own requests: typed at a terminal, through Remote Control, or through an SDK
+    // host such as the desktop app (its prompts arrive as `sdk`).
+    const k = e.origin.kind
+    if (e.turnId === undefined && (k === 'composer' || k === 'bridge' || k === 'sdk')) {
       const text = clean(e.text)
       ask = text ? clip(text, LIMITS.ask) : null
       activity = []
@@ -208,7 +218,7 @@ export const register: Register = on => {
   })
 
   on('tool.call', async ($, e, next) => {
-    if (isInteractive && e.agentId === undefined) {
+    if (e.agentId === undefined) {
       const line = describeTool(e.tool, e as unknown as Record<string, unknown>)
       if (line) activity = [...activity, line].slice(-LIMITS.activity)
     }
@@ -217,7 +227,7 @@ export const register: Register = on => {
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (!isInteractive || e.agentId !== undefined) return done
+    if (e.agentId !== undefined) return done
     const answer = clip(clean(done.text ?? ''), LIMITS.answer)
     const recorded = { ask, activity }
     ask = null
@@ -227,6 +237,14 @@ export const register: Register = on => {
       return { ...l, turns: [...l.turns, turn].slice(-LIMITS.turns) }
     })
     $.clock.after(0, () => void summarize($))
+    return done
+  })
+
+  // A surface that attaches after the start (the desktop app) gets the shiori read then.
+  on('session.attach', async ($, e, next) => {
+    const done = await next(e)
+    const cur = await read($, live)
+    if (cur.gist === null) $.clock.after(0, () => void openSession($, cur.epoch))
     return done
   })
 
@@ -242,7 +260,7 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const cur = await read($, live)
-    if (!isInteractive || e.props.hasSurvey || (cur.gist === null && cur.turns.length === 0)) return next(e)
+    if (e.props.hasSurvey || (cur.gist === null && cur.turns.length === 0)) return next(e)
     const { Box, Text, Button } = $.ui.resolve(e)
     const w = locale.words
     const g = cur.gist
