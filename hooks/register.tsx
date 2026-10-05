@@ -43,6 +43,8 @@ const ACCENT = 'cyan'
 const WAITING = 'yellow'
 
 const live = atom({ plugin: 'shiori', key: 'live' } as const, emptyLive())
+/** Whether the pane is up: the band then keeps only its mark, the pane says the rest. */
+const paneOpen = atom({ plugin: 'shiori', key: 'paneOpen' } as const, false)
 
 // Module variables start over on a hot reload; the record itself lives in $.state and $.store.
 let locale: Locale = localeFor(undefined)
@@ -262,6 +264,9 @@ export const register: Register = (on, options) => {
       name: 'shiori',
       description: 'Where this session stands: purpose, status, what waits on you, next, and an index of the IDs it mentions. `refresh` rewrites it.',
     })
+    // A reload finds the pane as the engine kept it.
+    const isUp = (await $.ui.panes()).some(p => p.id === PANE && p.isPlaced)
+    await update($, paneOpen, () => isUp)
     const { epoch } = await read($, live)
     $.clock.after(0, () => void openSession($, epoch))
     $.clock.after(5000, () => void prune($))
@@ -336,6 +341,18 @@ export const register: Register = (on, options) => {
     return { text: locale.words.opened }
   })
 
+  on('ui.open', { id: PANE }, async ($, e, next) => {
+    const r = await next(e)
+    if ('value' in r) await update($, paneOpen, () => r.value?.isPlaced === true)
+    return r
+  })
+
+  on('ui.close', { id: PANE }, async ($, e, next) => {
+    const r = await next(e)
+    if ('value' in r) await update($, paneOpen, () => false)
+    return r
+  })
+
   // Note each transcript row's text as it is drawn, for "go to the mention"; the row is drawn as the engine draws it.
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     noteRow(e.requestId, e.props.text)
@@ -350,6 +367,7 @@ export const register: Register = (on, options) => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const cur = await read($, live)
     if (e.props.hasSurvey || (cur.gist === null && cur.turns.length === 0)) return next(e)
+    const isPaneOpen = await read($, paneOpen)
     const { Box, Text, Button } = $.ui.resolve(e)
     const w = locale.words
     const g = cur.gist
@@ -368,6 +386,8 @@ export const register: Register = (on, options) => {
       ) : (
         <Text dimColor>○</Text>
       )
+
+    if (isPaneOpen) return <Box>{state}</Box>
 
     return (
       <Box flexDirection="column">

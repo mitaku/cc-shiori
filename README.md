@@ -11,7 +11,7 @@ When you run several sessions in parallel and switch between them, you lose trac
 
 ## What it shows
 
-**Above the prompt**: a mark, the status and a `details` button on the first line, the purpose on the second. The mark comes first, so a long status never pushes it out of sight.
+**Above the prompt**: a mark, the status and a `details` button on the first line, the purpose on the second. The mark comes first, so a long status never pushes it out of sight. While the pane is open the band keeps only the mark; the pane says the rest.
 
 | Mark | Meaning |
 |---|---|

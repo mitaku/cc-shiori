@@ -74,6 +74,6 @@ export type Saved = {
 
 declare module 'claude-code' {
   interface PluginState {
-    shiori: { live: Live }
+    shiori: { live: Live; paneOpen: boolean }
   }
 }
