@@ -55,6 +55,8 @@ export type Words = {
   next: string
   refs: string
   kinds: Record<PendingKind, string>
+  name: string
+  states: { working: string; done: string; idle: string }
   details: string
   close: string
   notYet: string
@@ -79,6 +81,8 @@ const EN: Words = {
   next: 'Next',
   refs: 'Index',
   kinds: { question: 'answer', decision: 'decide', action: 'do' },
+  name: 'shiori',
+  states: { working: 'working', done: 'at a stop', idle: 'idle' },
   details: 'details',
   close: 'close',
   notYet: '(after the first turn)',
@@ -103,6 +107,8 @@ const JA: Words = {
   next: '次',
   refs: '索引',
   kinds: { question: '回答', decision: '判断', action: '作業' },
+  name: '栞',
+  states: { working: '作業中', done: '区切り', idle: '待機' },
   details: '詳細',
   close: '閉じる',
   notYet: '(最初のターンの後に表示)',

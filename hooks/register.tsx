@@ -41,6 +41,8 @@ const STORE_MAX = 200
 const ACCENT = 'cyan'
 /** What waits on the user: the same yellow as the count of it in the band. */
 const WAITING = 'yellow'
+/** Leads the band, so a mark alone still says whose band it is. */
+const BOOKMARK = '🔖'
 
 const live = atom({ plugin: 'shiori', key: 'live' } as const, emptyLive())
 /** Whether the pane is up: the band then keeps only its mark, the pane says the rest. */
@@ -374,20 +376,30 @@ export const register: Register = (on, options) => {
     const counts = pendingCounts(g ? normalizeGist(g).pending : [])
     // The state comes first and never shrinks, so a long status cannot push it out of sight:
     // `?2 ◇1 !1` what waits on you, else ● working, ✓ nothing next, ○ idle.
-    const state =
-      counts.length > 0 ? (
-        <Text color={WAITING} bold>
-          {counts.map(c => `${c.mark}${c.n}`).join(' ')}
-        </Text>
-      ) : e.props.isWorking ? (
-        <Text color={ACCENT}>●</Text>
-      ) : g && !g.next ? (
-        <Text color="green">✓</Text>
-      ) : (
-        <Text dimColor>○</Text>
-      )
+    const [mark, color, said] =
+      counts.length > 0
+        ? [counts.map(c => `${c.mark}${c.n}`).join(' '), WAITING, counts.map(c => `${c.mark}${c.n} ${w.kinds[c.kind]}`).join(' · ')]
+        : e.props.isWorking
+          ? ['●', ACCENT, `● ${w.states.working}`]
+          : g && !g.next
+            ? ['✓', 'green', `✓ ${w.states.done}`]
+            : ['○', undefined, `○ ${w.states.idle}`]
+    const state = (
+      <Text color={color} dimColor={color === undefined} bold={counts.length > 0}>
+        {`${BOOKMARK} ${mark}`}
+      </Text>
+    )
 
-    if (isPaneOpen) return <Box>{state}</Box>
+    // With the pane up it says the rest; the band names itself and spells the mark out.
+    if (isPaneOpen)
+      return (
+        <Box>
+          <Text color={ACCENT}>{`${BOOKMARK} ${w.name}  `}</Text>
+          <Text color={color} dimColor={color === undefined} bold={counts.length > 0}>
+            {said}
+          </Text>
+        </Box>
+      )
 
     return (
       <Box flexDirection="column">
