@@ -58,6 +58,7 @@ export type Words = {
   notYet: string
   none: string
   refreshed: string
+  opened: string
 }
 
 const EN: Words = {
@@ -76,6 +77,7 @@ const EN: Words = {
   notYet: '(after the first turn)',
   none: '—',
   refreshed: 'Summary refreshed.',
+  opened: 'Opened the shiori pane.',
 }
 
 const JA: Words = {
@@ -94,6 +96,7 @@ const JA: Words = {
   notYet: '(最初のターンの後に表示)',
   none: '—',
   refreshed: '要約を作り直しました。',
+  opened: '栞を開きました。',
 }
 
 export type Locale = { words: Words; language: string }

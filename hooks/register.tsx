@@ -249,13 +249,14 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: 'shiori' }, async ($, e) => {
+    await refreshLocale($)
     if (e.args.trim() === 'refresh') {
       await update($, live, l => ({ ...l, gistTurn: Math.max(0, (l.turns.at(-1)?.n ?? 0) - LIMITS.turnsPerRequest) }))
       await summarize($)
       return { text: locale.words.refreshed }
     }
     await openPane($)
-    return { text: '' }
+    return { text: locale.words.opened }
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
