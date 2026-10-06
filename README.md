@@ -66,9 +66,9 @@ Haiku tells what waits and of which kind. When the final answer ends in a questi
 
 One Haiku call per main turn, through the session's own account and provider; the pane shows the count. Disable the plugin in `/plugin` to stop it.
 
-## Acknowledgements
+## Related
 
-Inspired by [skanehira/claude-recap-plus](https://github.com/skanehira/claude-recap-plus), which first put a session summary above the prompt. Shiori adds the index and is written from scratch.
+[skanehira/claude-recap-plus](https://github.com/skanehira/claude-recap-plus) also puts a session summary above the prompt. Shiori was thought up separately; I learned of that similar take along the way. Compare the two and use whichever suits you.
 
 ## License
 

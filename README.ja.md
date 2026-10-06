@@ -78,9 +78,9 @@
 
 本体のターンごとに Haiku を1回呼びます（セッションと同じアカウント・プロバイダ）。呼び出し回数はサイドバーの下に出ます。止めるときは `/plugin` で無効にしてください。
 
-## 謝辞
+## 関連
 
-[skanehira/claude-recap-plus](https://github.com/skanehira/claude-recap-plus) に着想を得ました。「セッションの要約を入力欄の上に出す」という形はそちらが先です。栞はそこに索引を足し、一から作り直したものです。
+[skanehira/claude-recap-plus](https://github.com/skanehira/claude-recap-plus) も、セッションの要約を入力欄の上に出す mod です。栞は別々に考えていたもので、似た発想の実装があることを途中で知りました。比べて、合うほうを使ってください。
 
 ## ライセンス
 
