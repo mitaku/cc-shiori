@@ -1,6 +1,6 @@
 {
   "name": "shiori",
-  "version": "0.6.1",
+  "version": "0.7.0",
   "description": "A bookmark for each session, from that session alone: where it stands, whether it is your turn, and what the tickets, PRs and tasks it mentioned point at",
   "author": { "name": "mitaku" },
   "license": "MIT",

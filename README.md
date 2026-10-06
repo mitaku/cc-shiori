@@ -23,6 +23,16 @@ A shiori sits in one book (one session) and looks at nothing else: not other ses
 | `✓` | at a stopping point (nothing next) |
 | `○` | idle |
 
+**While Claude works** the status line becomes a live one (the previous turn's status is out of date by then):
+
+```
+🔖 ● 3:12  edits 4 · commands 7   Bash: Run tests
+  └ look into index links  Explore · sonnet  Grep  0:41
+Purpose  settle the ballistics spec
+```
+
+How long the turn has run, how many edits, commands and other calls it made, its latest call, and the subagents running (task, type, model, tool in use, time; up to three). All of it comes from the engine's events: no model is called. When the turn ends the band goes back to the status Haiku wrote.
+
 Haiku tells what waits and of which kind. When the final answer ends in a question and Haiku listed nothing, that question stands as a `?`, so the mark does not hang on the model alone.
 
 **The pane** (`/shiori` or `details`): purpose, status, waiting on you (each with its mark and kind), next, the index (newest mention first), and the latest done items and decisions.

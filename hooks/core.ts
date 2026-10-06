@@ -1,5 +1,5 @@
 // Pure logic of shiori: no `$` here, so every function can be tested on its own.
-import type { Gist, Live, Pending, PendingKind, Ref, RefKind, Turn, Usage } from '../types'
+import type { Gist, Live, Pending, PendingKind, Ref, RefKind, Turn, Usage, Work } from '../types'
 
 export const LIMITS = {
   turns: 50,
@@ -57,6 +57,7 @@ export type Words = {
   kinds: Record<PendingKind, string>
   name: string
   states: { working: string; done: string; idle: string }
+  counts: { edits: string; commands: string; others: string }
   details: string
   close: string
   notYet: string
@@ -87,6 +88,7 @@ const EN: Words = {
   kinds: { question: 'answer', decision: 'decide', action: 'do' },
   name: 'shiori',
   states: { working: 'working', done: 'at a stop', idle: 'idle' },
+  counts: { edits: 'edits', commands: 'commands', others: 'other' },
   details: 'details',
   close: 'close',
   notYet: '(after the first turn)',
@@ -117,6 +119,7 @@ const JA: Words = {
   kinds: { question: '回答', decision: '判断', action: '作業' },
   name: '栞',
   states: { working: '作業中', done: '区切り', idle: '待機' },
+  counts: { edits: '編集', commands: 'コマンド', others: '他' },
   details: '詳細',
   close: '閉じる',
   notYet: '(最初のターンの後に表示)',
@@ -195,6 +198,40 @@ export const closingQuestion = (answer: string): string | undefined => {
  */
 export const withClosingQuestion = (pending: readonly Pending[], question: string | undefined): Pending[] =>
   pending.length === 0 && question ? [{ kind: 'question', text: question }] : [...pending]
+
+// ---------- the turn under way ----------
+
+export const idleWork = (): Work => ({ startedAt: null, edits: 0, commands: 0, others: 0, last: null, helpers: [] })
+
+/** Which count a main-loop tool call adds to: a file changed, a command run, or anything else. */
+export const countOf = (tool: string): 'edits' | 'commands' | 'others' =>
+  tool === 'Edit' || tool === 'Write' || tool === 'MultiEdit' || tool === 'NotebookEdit'
+    ? 'edits'
+    : tool === 'Bash'
+      ? 'commands'
+      : 'others'
+
+/** A main-loop tool call, counted and kept as the latest; the turn starts with its first if it has not. */
+export const noteCall = (w: Work, tool: string, line: string | undefined, now: number): Work => {
+  const k = countOf(tool)
+  return { ...w, startedAt: w.startedAt ?? now, [k]: w[k] + 1, last: line ?? tool }
+}
+
+/** `m:ss`, or `h:mm:ss` from an hour. */
+export const elapsed = (ms: number): string => {
+  const s = Math.max(0, Math.floor(ms / 1000))
+  const two = (n: number) => String(n).padStart(2, '0')
+  const h = Math.floor(s / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  return h > 0 ? `${h}:${two(m)}:${two(s % 60)}` : `${m}:${two(s % 60)}`
+}
+
+/** The counts that are not zero, `編集 4 · コマンド 7`, in that order. */
+export const countsLine = (w: Work, words: Words['counts']): string =>
+  (['edits', 'commands', 'others'] as const)
+    .filter(k => w[k] > 0)
+    .map(k => `${words[k]} ${w[k]}`)
+    .join(' · ')
 
 // ---------- tool activity ----------
 

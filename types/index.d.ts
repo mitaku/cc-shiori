@@ -62,6 +62,30 @@ export type Live = {
   usage: Usage
 }
 
+/** A subagent the main loop started, while it runs. */
+export type Helper = {
+  id: string
+  /** The Agent call's description of its task. */
+  what: string
+  type: string
+  model: string
+  /** The tool it called last; null before its first. */
+  tool: string | null
+  startedAt: number
+}
+
+/** What the turn under way has done so far: the band shows it while Claude works. */
+export type Work = {
+  /** When the turn began; null between turns. */
+  startedAt: number | null
+  edits: number
+  commands: number
+  others: number
+  /** The latest tool call, one line. */
+  last: string | null
+  helpers: Helper[]
+}
+
 /** What the store keeps per session, under `shiori:<session id>`. */
 export type Saved = {
   gist: Gist
@@ -74,6 +98,6 @@ export type Saved = {
 
 declare module 'claude-code' {
   interface PluginState {
-    shiori: { live: Live; paneOpen: boolean }
+    shiori: { live: Live; paneOpen: boolean; work: Work; now: number }
   }
 }

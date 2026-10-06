@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderSurface } from 'claude-code'
+import type { EngineInterface, Register, RenderSurface, Timer } from 'claude-code'
 
 import type { Gist, Live, Ref, Saved, Turn } from '../types'
 import {
@@ -9,13 +9,17 @@ import {
   clean,
   clip,
   closingQuestion,
+  countsLine,
   describeTool,
+  elapsed,
   emptyLive,
   emptyUsage,
+  idleWork,
   fallbackGist,
   localeFor,
   mentions,
   mergeRefs,
+  noteCall,
   normalizeGist,
   parseLinkRules,
   pendingCounts,
@@ -46,6 +50,27 @@ const BOOKMARK = '🔖'
 const live = atom({ plugin: 'shiori', key: 'live' } as const, emptyLive())
 /** Whether the pane is up: the band then keeps only its mark, the pane says the rest. */
 const paneOpen = atom({ plugin: 'shiori', key: 'paneOpen' } as const, false)
+/** The turn under way: what the band shows while Claude works, from the engine's events alone (no model call). */
+const work = atom({ plugin: 'shiori', key: 'work' } as const, idleWork())
+/** The clock the band's elapsed time reads: ticks each second while a turn runs. */
+const now = atom({ plugin: 'shiori', key: 'now' } as const, 0)
+/** Most helper rows the band draws; more are summed up in one line. */
+const HELPERS_SHOWN = 3
+
+let tick: Timer | null = null
+
+/** Starts the band's clock for a turn, once. */
+async function startTick($: EngineInterface) {
+  if (tick) return
+  const t = await $.clock.now()
+  await update($, now, () => t)
+  tick = $.clock.every(1000, () => void $.clock.now().then(t => update($, now, () => t)))
+}
+
+function endTick() {
+  tick?.cancel()
+  tick = null
+}
 
 // Module variables start over on a hot reload; the record itself lives in $.state and $.store.
 let locale: Locale = localeFor(undefined)
@@ -284,6 +309,8 @@ export const register: Register = (on, options) => {
       const cur = await read($, live)
       const epoch = cur.epoch + 1
       await update($, live, () => emptyLive(epoch))
+      endTick()
+      await update($, work, () => idleWork())
       ask = null
       activity = []
       $.clock.after(500, () => void reopen($, epoch, cur.sessionId, 0))
@@ -299,21 +326,36 @@ export const register: Register = (on, options) => {
       const text = clean(e.text)
       ask = text ? clip(text, LIMITS.ask) : null
       activity = []
+      const t = await $.clock.now()
+      await update($, work, () => ({ ...idleWork(), startedAt: t }))
+      await startTick($)
     }
     return next(e)
   })
 
   on('tool.call', async ($, e, next) => {
+    const t = await $.clock.now()
     if (e.agentId === undefined) {
       const line = describeTool(e.tool, e as unknown as Record<string, unknown>)
       if (line) activity = [...activity, line].slice(-LIMITS.activity)
+      await update($, work, w => noteCall(w, e.tool, line, t))
+      await startTick($)
+    } else {
+      const id = e.agentId
+      await update($, work, w => ({ ...w, helpers: w.helpers.map(h => (h.id === id ? { ...h, tool: e.tool } : h)) }))
     }
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
-    if (e.agentId !== undefined) return done
+    if (e.agentId !== undefined) {
+      const id = e.agentId
+      await update($, work, w => ({ ...w, helpers: w.helpers.filter(h => h.id !== id) }))
+      return done
+    }
+    endTick()
+    await update($, work, () => idleWork())
     const full = clean(done.text ?? '')
     const answer = clip(full, LIMITS.answer)
     const question = closingQuestion(full)
@@ -326,6 +368,16 @@ export const register: Register = (on, options) => {
     })
     $.clock.after(0, () => void summarize($))
     return done
+  })
+
+  // A subagent the main loop starts gets a row under the band until its loop completes.
+  on('agent.spawn', async ($, e, next) => {
+    const r = await next(e)
+    if (e.parentAgentId === undefined && 'agentId' in r && r.agentId) {
+      const helper = { id: r.agentId, what: e.description, type: e.subagentType, model: r.model, tool: null, startedAt: await $.clock.now() }
+      await update($, work, w => ({ ...w, helpers: [...w.helpers.filter(h => h.id !== helper.id), helper] }))
+    }
+    return r
   })
 
   // A surface that attaches after the start (the desktop app) gets the shiori read then.
@@ -384,11 +436,71 @@ export const register: Register = (on, options) => {
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const cur = await read($, live)
-    if (e.props.hasSurvey || (cur.gist === null && cur.turns.length === 0)) return next(e)
+    const doing = await read($, work)
+    const isLive = e.props.isWorking && doing.startedAt !== null
+    if (e.props.hasSurvey || (cur.gist === null && cur.turns.length === 0 && !isLive)) return next(e)
     const isPaneOpen = await read($, paneOpen)
     const { Box, Text, Button } = $.ui.resolve(e)
     const w = locale.words
     const g = cur.gist
+    const details = (
+      <Box flexShrink={0}>
+        <Text> </Text>
+        <Button key="details" label={w.details} onPress={() => void openPane($)} />
+      </Box>
+    )
+    const purpose = (
+      <Box>
+        <Text color={ACCENT}>{w.purpose} </Text>
+        <Text dimColor wrap="truncate-end">
+          {g?.purpose ?? w.notYet}
+        </Text>
+      </Box>
+    )
+
+    // While Claude works: how long, what the turn has done so far, its latest call, and a row per
+    // subagent. The previous turn's status and what waited on you are out of date by then.
+    if (isLive) {
+      const t = await read($, now)
+      const started = doing.startedAt ?? t
+      const tally = countsLine(doing, w.counts)
+      const shown = doing.helpers.slice(0, HELPERS_SHOWN)
+      const more = doing.helpers.length - shown.length
+      return (
+        <Box flexDirection="column">
+          <Box>
+            <Box flexShrink={0}>
+              <Text color={ACCENT}>{isPaneOpen ? `${BOOKMARK} ${w.name}  ● ${w.states.working} ` : `${BOOKMARK} ● `}</Text>
+              <Text>{elapsed(t - started)}</Text>
+              {tally ? <Text dimColor>{`  ${tally}`}</Text> : null}
+              <Text>{'  '}</Text>
+            </Box>
+            <Box flexGrow={1} flexShrink={1}>
+              <Text dimColor wrap="truncate-end">
+                {doing.last ?? ''}
+              </Text>
+            </Box>
+            {isPaneOpen ? null : details}
+          </Box>
+          {shown.map(h => (
+            <Box key={`helper-${h.id}`}>
+              <Box flexShrink={0}>
+                <Text dimColor>{'  └ '}</Text>
+              </Box>
+              <Box flexGrow={1} flexShrink={1}>
+                <Text wrap="truncate-end">{h.what}</Text>
+              </Box>
+              <Box flexShrink={0}>
+                <Text dimColor>{`  ${h.type} · ${h.model}${h.tool ? `  ${h.tool}` : ''}  ${elapsed(t - h.startedAt)}`}</Text>
+              </Box>
+            </Box>
+          ))}
+          {more > 0 ? <Text dimColor>{`  └ +${more}`}</Text> : null}
+          {isPaneOpen ? null : purpose}
+        </Box>
+      )
+    }
+
     const counts = pendingCounts(g ? normalizeGist(g).pending : [])
     // The state comes first and never shrinks, so a long status cannot push it out of sight:
     // `?2 ◇1 !1` what waits on you, else ● working, ✓ nothing next, ○ idle.
@@ -400,11 +512,6 @@ export const register: Register = (on, options) => {
           : g && !g.next
             ? ['✓', 'green', `✓ ${w.states.done}`]
             : ['○', undefined, `○ ${w.states.idle}`]
-    const state = (
-      <Text color={color} dimColor={color === undefined} bold={counts.length > 0}>
-        {`${BOOKMARK} ${mark}`}
-      </Text>
-    )
 
     // With the pane up it says the rest; the band names itself and spells the mark out.
     if (isPaneOpen)
@@ -420,22 +527,18 @@ export const register: Register = (on, options) => {
     return (
       <Box flexDirection="column">
         <Box>
-          <Box flexShrink={0}>{state}</Box>
+          <Box flexShrink={0}>
+            <Text color={color} dimColor={color === undefined} bold={counts.length > 0}>
+              {`${BOOKMARK} ${mark}`}
+            </Text>
+          </Box>
           <Text> </Text>
           <Box flexGrow={1} flexShrink={1}>
             <Text wrap="truncate-end">{g?.status ?? w.notYet}</Text>
           </Box>
-          <Box flexShrink={0}>
-            <Text> </Text>
-            <Button key="details" label={w.details} onPress={() => void openPane($)} />
-          </Box>
+          {details}
         </Box>
-        <Box>
-          <Text color={ACCENT}>{w.purpose} </Text>
-          <Text dimColor wrap="truncate-end">
-            {g?.purpose ?? w.notYet}
-          </Text>
-        </Box>
+        {purpose}
       </Box>
     )
   })
